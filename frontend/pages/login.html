@@ -59,8 +59,8 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    // THIS IS THE KEY: Redirect to the homepage on success
-                    window.location.href = '/homepage';
+                    // Redirect based on user type
+                    window.location.href = data.redirect || '/homepage';
                 } else {
                     // Display the error message from the server
                     errorMessageDiv.textContent = data.error || 'An unknown error occurred.';

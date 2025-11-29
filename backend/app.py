@@ -74,9 +74,11 @@ def process_images(event_id):
                             os.makedirs(os.path.join(person_dir, "group"), exist_ok=True)
 
                             if len(face_encodings) == 1:
+                                # Individual photo - only save to individual folder
                                 shutil.copy(image_path, os.path.join(person_dir, "individual", filename))
-                            
-                            shutil.copy(image_path, os.path.join(person_dir, "group", f"watermarked_{filename}"))
+                            else:
+                                # Group photo - only save to group folder
+                                shutil.copy(image_path, os.path.join(person_dir, "group", f"watermarked_{filename}"))
 
                 except Exception as e:
                     print(f"  -> ERROR processing {filename}: {e}")
@@ -119,6 +121,7 @@ def serve_event_organizer(): return render_template('event_organizer.html')
 def register_user():
     data = request.get_json()
     full_name, email, password = data.get('fullName'), data.get('email'), data.get('password')
+    user_type = data.get('userType', 'user')
     if not all([full_name, email, password]): return jsonify({"success": False, "error": "All fields are required"}), 400
     hashed_password = generate_password_hash(password)
     conn = get_db_connection()
@@ -127,7 +130,7 @@ def register_user():
     try:
         cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
         if cursor.fetchone(): return jsonify({"success": False, "error": "Email already registered"}), 409
-        cursor.execute("INSERT INTO users (full_name, email, password) VALUES (%s, %s, %s)", (full_name, email, hashed_password))
+        cursor.execute("INSERT INTO users (full_name, email, password, user_type) VALUES (%s, %s, %s, %s)", (full_name, email, hashed_password, user_type))
         conn.commit()
         return jsonify({"success": True, "message": "Registration successful!"}), 201
     except mysql.connector.Error as err:
@@ -144,13 +147,15 @@ def login_user():
     if conn is None: return jsonify({"success": False, "error": "Database connection failed"}), 500
     cursor = conn.cursor(dictionary=True)
     try:
-        cursor.execute("SELECT id, email, password FROM users WHERE email = %s", (email,))
+        cursor.execute("SELECT id, email, password, user_type FROM users WHERE email = %s", (email,))
         user = cursor.fetchone()
         if user and check_password_hash(user['password'], password):
             session['logged_in'] = True
             session['user_id'] = user['id']
             session['user_email'] = user['email']
-            return jsonify({"success": True, "message": "Login successful!"}), 200
+            session['user_type'] = user.get('user_type', 'user')
+            redirect_url = '/event_organizer' if session['user_type'] == 'organizer' else '/homepage'
+            return jsonify({"success": True, "message": "Login successful!", "redirect": redirect_url}), 200
         else:
             return jsonify({"success": False, "error": "Invalid email or password"}), 401
     except mysql.connector.Error as err:
@@ -364,6 +369,8 @@ def get_event_photos(event_id):
     event_dir = os.path.join(app.config['PROCESSED_FOLDER'], event_id)
     if not os.path.exists(event_dir):
         return jsonify({"success": False, "error": "No photos found for this event yet."}), 404
+    
+    # Only show group photos (photos with multiple people) in public view
     unique_photos = set()
     for person_id in os.listdir(event_dir):
         group_dir = os.path.join(event_dir, person_id, "group")
@@ -371,6 +378,7 @@ def get_event_photos(event_id):
             for filename in os.listdir(group_dir):
                 if filename.startswith('watermarked_'):
                     unique_photos.add(filename)
+    
     photo_urls = [f"/photos/{event_id}/all/{filename}" for filename in sorted(list(unique_photos))]
     return jsonify({"success": True, "photos": photo_urls})
 
