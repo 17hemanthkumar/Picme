@@ -51,9 +51,20 @@ KNOWN_FACES_DATA_PATH = os.path.join(BASE_DIR, 'known_faces.dat')
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['PROCESSED_FOLDER'] = PROCESSED_FOLDER
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROCESSED_FOLDER, exist_ok=True)
+
+# --- DISABLE CACHING FOR ALL RESPONSES ---
+@app.after_request
+def add_no_cache_headers(response):
+    """Disable caching for all responses to prevent stale content"""
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 # --- INITIALIZE THE ML MODEL ---
 model = FaceRecognitionModel(data_file=KNOWN_FACES_DATA_PATH)
@@ -147,7 +158,8 @@ def serve_signup_page():
 @app.route('/homepage')
 @login_required
 def serve_homepage():
-    return render_template('homepage.html')
+    import time
+    return render_template('homepage.html', cache_bust=int(time.time()))
 
 @app.route('/event_discovery')
 @login_required
@@ -675,4 +687,5 @@ if __name__ == '__main__':
     process_existing_uploads_on_startup()
 
     port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    # Use 127.0.0.1 for localhost only, or 0.0.0.0 for network access
+    app.run(host='127.0.0.1', port=port, debug=True)

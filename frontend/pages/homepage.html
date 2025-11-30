@@ -1,8 +1,13 @@
 <!DOCTYPE html>
+<!-- VERSION 3.0 - Testimonials and Featured Events Removed - Cache Busted -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="cache-bust" content="{{ cache_bust }}">
     <title>PicMe - Find Your Event Photos</title>
     <link rel="stylesheet" href="../css/main.css">
     <!-- Tailwind CSS via CDN (consider using local build for production) -->
@@ -157,156 +162,91 @@
         </div>
     </section>
 
-    <!-- Featured Events Section -->
+    <!-- Recent Events Section -->
     <section class="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
         <div class="flex justify-between items-center mb-8">
-            <h2 class="text-3xl font-bold text-gray-900">Featured Events</h2>
+            <h2 class="text-3xl font-bold text-gray-900">Recent Events</h2>
             <a href="/event_discovery" class="text-indigo-600 hover:text-indigo-800 font-medium">View All Events</a>
         </div>
         
-        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- Event Card 1 -->
-            <div class="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-200">
-                <div class="relative">
-                    <img src="https://images.unsplash.com/photo-1492684223066-81342ee5ff30?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1170&q=80" 
-                         alt="Music festival" 
-                         class="w-full h-48 object-cover">
-                    <div class="absolute top-2 right-2 bg-white/90 px-2 py-1 rounded-md text-xs font-medium">
-                        1,428 photos
-                    </div>
-                </div>
-                <div class="p-5">
-                    <div class="flex justify-between items-start mb-2">
-                        <h3 class="text-lg font-bold text-gray-900">Electric Dreams Festival</h3>
-                        <span class="bg-indigo-100 text-indigo-800 text-xs px-2 py-1 rounded-full">Music</span>
-                    </div>
-                    <p class="text-gray-600 text-sm mb-4">July 15-17, 2023 • San Francisco, CA</p>
-                    <a href="event_detail.html" class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">View Photos →</a>
-                </div>
-            </div>
-            
-            <!-- Event Card 2 -->
-            <div class="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-200">
-                <div class="relative">
-                    <img src="https://images.unsplash.com/photo-1519671482749-fd09be7ccebf?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1170&q=80" 
-                         alt="Tech conference" 
-                         class="w-full h-48 object-cover">
-                    <div class="absolute top-2 right-2 bg-white/90 px-2 py-1 rounded-md text-xs font-medium">
-                        892 photos
-                    </div>
-                </div>
-                <div class="p-5">
-                    <div class="flex justify-between items-start mb-2">
-                        <h3 class="text-lg font-bold text-gray-900">TechForward Summit</h3>
-                        <span class="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">Conference</span>
-                    </div>
-                    <p class="text-gray-600 text-sm mb-4">June 8-10, 2023 • Austin, TX</p>
-                    <a href="event_detail.html" class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">View Photos →</a>
-                </div>
-            </div>
-            
-            <!-- Event Card 3 -->
-            <div class="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-200">
-                <div class="relative">
-                    <img src="https://images.unsplash.com/photo-1531058020387-3be344556be6?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1170&q=80" 
-                         alt="Wedding ceremony" 
-                         class="w-full h-48 object-cover">
-                    <div class="absolute top-2 right-2 bg-white/90 px-2 py-1 rounded-md text-xs font-medium">
-                        324 photos
-                    </div>
-                </div>
-                <div class="p-5">
-                    <div class="flex justify-between items-start mb-2">
-                        <h3 class="text-lg font-bold text-gray-900">Smith-Johnson Wedding</h3>
-                        <span class="bg-pink-100 text-pink-800 text-xs px-2 py-1 rounded-full">Wedding</span>
-                    </div>
-                    <p class="text-gray-600 text-sm mb-4">May 20, 2023 • Miami, FL</p>
-                    <a href="event_detail.html" class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">View Photos →</a>
-                </div>
+        <div id="recentEventsGrid" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Events will be loaded dynamically -->
+            <div class="col-span-full text-center py-12">
+                <p class="text-gray-500">Loading events...</p>
             </div>
         </div>
     </section>
 
-    <!-- Testimonials Section -->
-    <section class="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto bg-indigo-50 rounded-2xl">
-        <div class="text-center mb-12">
-            <h2 class="text-3xl font-bold text-gray-900 mb-4">What People Are Saying</h2>
-            <p class="text-lg text-gray-600 max-w-3xl mx-auto">
-                Don't just take our word for it - hear from our users
-            </p>
-        </div>
-        
-        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            <!-- Testimonial 1 -->
-            <div class="bg-white p-6 rounded-xl shadow-sm">
-                <div class="flex items-center mb-4">
-                    <img src="https://randomuser.me/api/portraits/women/32.jpg" 
-                         alt="Sarah Johnson" 
-                         class="w-12 h-12 rounded-full object-cover mr-4">
-                    <div>
-                        <h4 class="font-semibold text-gray-900">Sarah Johnson</h4>
-                        <p class="text-sm text-gray-600">Music Festival Attendee</p>
+    <script>
+        // Load recent events from the database
+        fetch('/events')
+            .then(response => response.json())
+            .then(events => {
+                const grid = document.getElementById('recentEventsGrid');
+                
+                if (events.length === 0) {
+                    grid.innerHTML = `
+                        <div class="col-span-full text-center py-12">
+                            <h3 class="text-xl font-semibold text-gray-600 mb-2">No events yet</h3>
+                            <p class="text-gray-500">Check back soon for upcoming events!</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // Show only the 3 most recent events
+                const recentEvents = events.slice(-3).reverse();
+                
+                grid.innerHTML = recentEvents.map(event => {
+                    const categoryColors = {
+                        'Festival': 'bg-indigo-100 text-indigo-800',
+                        'Corporate': 'bg-blue-100 text-blue-800',
+                        'Wedding': 'bg-pink-100 text-pink-800',
+                        'Conference': 'bg-purple-100 text-purple-800',
+                        'Party': 'bg-green-100 text-green-800',
+                        'Sports': 'bg-orange-100 text-orange-800',
+                        'Other': 'bg-gray-100 text-gray-800'
+                    };
+                    
+                    const categoryColor = categoryColors[event.category] || categoryColors['Other'];
+                    const eventDate = new Date(event.date).toLocaleDateString('en-US', { 
+                        year: 'numeric', 
+                        month: 'short', 
+                        day: 'numeric' 
+                    });
+                    
+                    return `
+                        <div class="bg-white rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-shadow duration-200">
+                            <div class="relative">
+                                <img src="${event.image || 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400'}" 
+                                     alt="${event.name}" 
+                                     class="w-full h-48 object-cover"
+                                     onerror="this.src='https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400'">
+                                <div class="absolute top-2 right-2 bg-white/90 px-2 py-1 rounded-md text-xs font-medium">
+                                    ${event.photos_count || 0} photos
+                                </div>
+                            </div>
+                            <div class="p-5">
+                                <div class="flex justify-between items-start mb-2">
+                                    <h3 class="text-lg font-bold text-gray-900">${event.name}</h3>
+                                    <span class="${categoryColor} text-xs px-2 py-1 rounded-full">${event.category}</span>
+                                </div>
+                                <p class="text-gray-600 text-sm mb-4">${eventDate} • ${event.location}</p>
+                                <a href="/event_detail?event_id=${event.id}" class="text-indigo-600 hover:text-indigo-800 text-sm font-medium">View Photos →</a>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            })
+            .catch(error => {
+                console.error('Error loading events:', error);
+                document.getElementById('recentEventsGrid').innerHTML = `
+                    <div class="col-span-full text-center py-12">
+                        <p class="text-red-500">Failed to load events</p>
                     </div>
-                </div>
-                <p class="text-gray-700">
-                    "I went to a 3-day festival and found 58 photos of myself I never knew existed! PicMe saved me hours of scrolling through thousands of photos."
-                </p>
-                <div class="mt-4 flex text-yellow-400">
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                </div>
-            </div>
-            
-            <!-- Testimonial 2 -->
-            <div class="bg-white p-6 rounded-xl shadow-sm">
-                <div class="flex items-center mb-4">
-                    <img src="https://randomuser.me/api/portraits/men/45.jpg" 
-                         alt="Michael Chen" 
-                         class="w-12 h-12 rounded-full object-cover mr-4">
-                    <div>
-                        <h4 class="font-semibold text-gray-900">Michael Chen</h4>
-                        <p class="text-sm text-gray-600">Conference Speaker</p>
-                    </div>
-                </div>
-                <p class="text-gray-700">
-                    "As a speaker at multiple events, I need professional photos for my portfolio. PicMe finds all the best shots from different photographers in one place."
-                </p>
-                <div class="mt-4 flex text-yellow-400">
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                </div>
-            </div>
-            
-            <!-- Testimonial 3 -->
-            <div class="bg-white p-6 rounded-xl shadow-sm">
-                <div class="flex items-center mb-4">
-                    <img src="https://randomuser.me/api/portraits/women/68.jpg" 
-                         alt="Emily Rodriguez" 
-                         class="w-12 h-12 rounded-full object-cover mr-4">
-                    <div>
-                        <h4 class="font-semibold text-gray-900">Emily Rodriguez</h4>
-                        <p class="text-sm text-gray-600">Wedding Guest</p>
-                    </div>
-                </div>
-                <p class="text-gray-700">
-                    "At my best friend's wedding, I was too busy having fun to pose for photos. PicMe found all the candid moments I would have missed otherwise!"
-                </p>
-                <div class="mt-4 flex text-yellow-400">
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star"></i>
-                    <i class="fas fa-star-half-alt"></i>
-                </div>
-            </div>
-        </div>
-    </section>
+                `;
+            });
+    </script>
 
     <!-- CTA Section -->
     <section class="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
