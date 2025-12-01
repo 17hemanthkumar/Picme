@@ -3,111 +3,104 @@ import numpy as np
 import os
 import pickle
 
-
 class FaceRecognitionModel:
     def __init__(self, data_file='known_faces.dat'):
         """
-        Model to store and match encodings of known identities.
-        Each person stores multiple encodings to handle glasses, lighting, angles, etc.
+        Model storing encodings for multiple known identities.
+        Each identity contains multiple encoding samples.
         """
         self.data_file = data_file
-
-        # known_encodings is now a list of lists (multiple encodings per person)
-        self.known_encodings = []  # [[enc1, enc2, ...], [encA, encB, ...], ...]
-        self.known_ids = []        # ["person_0001", "person_0002", ...]
+        self.known_encodings = []  # List of lists
+        self.known_ids = []        # ID labels
 
         self.load_model()
 
     def load_model(self):
-        """Load model from file if exists."""
+        """Load existing data file if available."""
         if os.path.exists(self.data_file):
             try:
-                with open(self.data_file, 'rb') as f:
+                with open(self.data_file, "rb") as f:
                     self.known_encodings, self.known_ids = pickle.load(f)
-                print(f"--- [ML MODEL] Loaded {len(self.known_ids)} known faces. ---")
+                print(f"--- [ML MODEL] Loaded {len(self.known_ids)} identities. ---")
             except Exception as e:
-                print(f"--- [ML MODEL] Error loading model: {e}. Starting fresh. ---")
+                print(f"--- [ML MODEL] Error loading model: {e}. Starting new model. ---")
 
     def save_model(self):
-        """Save model persistently."""
-        with open(self.data_file, 'wb') as f:
+        """Save current model."""
+        with open(self.data_file, "wb") as f:
             pickle.dump((self.known_encodings, self.known_ids), f)
         print(f"--- [ML MODEL] Model saved with {len(self.known_ids)} identities. ---")
 
-    # ------------------------------------------------------------
-    # ADD NEW OR REINFORCE EXISTING PERSON
-    # ------------------------------------------------------------
-    def update_person_encoding(self, idx, new_encoding):
-        """Add new encoding to an existing user & keep encoding count limited."""
-        self.known_encodings[idx].append(new_encoding)
+    # ----------------------------------------------------------------------
+    # Reinforce existing identity
+    # ----------------------------------------------------------------------
+    def update_person_encoding(self, index, new_encoding):
+        """Append new encodings, keep last 15 samples only."""
+        self.known_encodings[index].append(new_encoding)
 
-        # Limit encoding history to last 12 encodings
-        if len(self.known_encodings[idx]) > 12:
-            self.known_encodings[idx] = self.known_encodings[idx][-12:]
+        # Keep model size small but accurate
+        if len(self.known_encodings[index]) > 15:
+            self.known_encodings[index] = self.known_encodings[index][-15:]
 
         self.save_model()
 
+    # ----------------------------------------------------------------------
+    # Learning new identity OR matching existing identity
+    # ----------------------------------------------------------------------
     def learn_face(self, new_encoding):
-        """Learn or reinforce a face using tolerant matching logic."""
+        """Learn a new encoding or reinforce an existing identity."""
         if not self.known_encodings:
             new_id = f"person_{len(self.known_ids) + 1:04d}"
             self.known_encodings.append([new_encoding])
             self.known_ids.append(new_id)
-            print(f"--- [ML MODEL] Learned first face → {new_id} ---")
-            self.save_model()
+            print(f"--- [ML MODEL] First face learned → {new_id} ---")
             return new_id
 
-        # Compare new encoding against mean encoding of each identity
-        avg_encodings = [np.mean(encodings, axis=0) for encodings in self.known_encodings]
+        # Compute average encodings per user
+        avg_encodings = [np.mean(enc_list, axis=0) for enc_list in self.known_encodings]
         distances = face_recognition.face_distance(avg_encodings, new_encoding)
+
         best_match_index = np.argmin(distances)
         best_distance = distances[best_match_index]
 
-        # Dynamic tolerance: More relaxed for group photos
-        STRICT_TOLERANCE = 0.63
-        RELAXED_TOLERANCE = 0.72  # supports glasses, tilt, group scene distortions
+        # Dynamic tolerance
+        STRICT_TOLERANCE = 0.55
+        RELAXED_TOLERANCE = 0.60  # expanded for group + low light
 
         if best_distance <= STRICT_TOLERANCE:
-            # Clear match, strengthen profile
             self.update_person_encoding(best_match_index, new_encoding)
+            print(f"--- [ML MODEL] Strong match → {self.known_ids[best_match_index]} ({best_distance:.2f}) ---")
             return self.known_ids[best_match_index]
-        elif best_distance <= RELAXED_TOLERANCE:
-            # Accept match but weaker confidence
-            self.update_person_encoding(best_match_index, new_encoding)
-            print(f"--- [ML MODEL] Weak match accepted ({best_distance:.2f}) | Reinforced {self.known_ids[best_match_index]} ---")
-            return self.known_ids[best_match_index]
-        else:
-            # New person discovered
-            new_id = f"person_{len(self.known_ids) + 1:04d}"
-            self.known_encodings.append([new_encoding])
-            self.known_ids.append(new_id)
-            print(f"--- [ML MODEL] Learned NEW identity {new_id} | distance={best_distance:.2f} ---")
-            self.save_model()
-            return new_id
 
-    # ------------------------------------------------------------
-    # RECOGNITION
-    # ------------------------------------------------------------
-    def recognize_face(self, scanned_encoding):
-        """Recognize the closest identity if confident enough."""
+
+        # If no match found → new identity
+        new_id = f"person_{len(self.known_ids) + 1:04d}"
+        self.known_encodings.append([new_encoding])
+        self.known_ids.append(new_id)
+        print(f"--- [ML MODEL] New identity created {new_id} | Dist={best_distance:.2f} ---")
+        return new_id
+
+    # ----------------------------------------------------------------------
+    # Recognize face
+    # ----------------------------------------------------------------------
+    def recognize_face(self, encoding):
+        """Return matched identity if confidence is high enough."""
         if not self.known_encodings:
+            print("--- [ML MODEL] No faces in database ---")
             return None
 
-        avg_encodings = [np.mean(encodings, axis=0) for encodings in self.known_encodings]
-        distances = face_recognition.face_distance(avg_encodings, scanned_encoding)
+        avg_encodings = [np.mean(enc_list, axis=0) for enc_list in self.known_encodings]
+        distances = face_recognition.face_distance(avg_encodings, encoding)
+
         best_match_index = np.argmin(distances)
         best_distance = distances[best_match_index]
 
-        STRICT_TOLERANCE = 0.63
-        RELAXED_TOLERANCE = 0.72
+        STRICT_TOLERANCE = 0.55
+        RELAXED_TOLERANCE = 0.60
 
         if best_distance <= STRICT_TOLERANCE:
-            print(f"--- [ML MODEL] STRONG match {self.known_ids[best_match_index]} ({best_distance:.2f}) ---")
+            print(f"--- [ML MODEL] STRONG MATCH {self.known_ids[best_match_index]} ({best_distance:.2f}) ---")
             return self.known_ids[best_match_index]
 
-        if best_distance <= RELAXED_TOLERANCE:
-            print(f"--- [ML MODEL] WEAK match accepted {self.known_ids[best_match_index]} ({best_distance:.2f}) ---")
-            return self.known_ids[best_match_index]
-
-        print(f"--- [ML MODEL] NO MATCH (best={best_distance:.2f}) ---")
+        print(f"--- [ML MODEL] No Match Found (best={best_distance:.2f}) ---")
         return None

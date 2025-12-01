@@ -1,172 +1,260 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Face Scan - PicMe</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
 
     <style>
-        body { background-color: #f9fafb; }
-        #video, #canvas {
+        body {
+            background-color: #f9fafb;
+        }
+
+        #video,
+        #canvas,
+        #overlay {
             width: 100%;
             max-width: 400px;
             border-radius: 14px;
-            margin: auto;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+            background: transparent; /* removed dark mask */
         }
+
         .feedback {
             font-weight: 700;
             margin-top: 16px;
             font-size: 1.05rem;
         }
+
         .feedback-info { color: #2563eb; }
         .feedback-success { color: #059669; }
         .feedback-error { color: #dc2626; }
+
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: none;
+        }
     </style>
 </head>
 
 <body class="min-h-screen flex flex-col items-center pt-24">
-
     <h1 class="text-3xl font-bold text-indigo-600 mb-2">Face Scan</h1>
-    <p class="text-gray-600 mb-6">Scan your face to securely access your photos</p>
+    <p class="text-gray-600 mb-2 text-center px-4">
+        Keep your face centered inside the blue box while we capture multiple frames for accuracy.
+    </p>
+    <p id="challengeHint" class="text-xs text-gray-500 mb-4 text-center px-4"></p>
 
-    <video id="video" autoplay playsinline class="rounded-lg shadow-md hidden"></video>
-    <canvas id="canvas" class="hidden"></canvas>
+    <div class="relative w-full max-w-[400px] flex flex-col items-center">
+        <video id="video" autoplay playsinline class="rounded-lg shadow-md hidden"></video>
+        <canvas id="overlay" class="hidden"></canvas>
+    </div>
+
+    <canvas id="canvas" class="hidden mt-4"></canvas>
 
     <p id="feedback" class="feedback feedback-info">Initializing camera...</p>
+    <p id="confidenceLabel" class="mt-2 text-sm text-gray-600"></p>
 
-    <button id="recaptureBtn"
-            class="mt-6 px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition hidden">
+    <button
+        id="recaptureBtn"
+        class="mt-6 px-6 py-3 bg-indigo-600 text-white rounded-lg shadow-md hover:bg-indigo-700 transition hidden">
         Recapture
     </button>
 
-<script>
-document.addEventListener("DOMContentLoaded", () => {
+    <script>
+        document.addEventListener("DOMContentLoaded", () => {
+            const video = document.getElementById("video");
+            const canvas = document.getElementById("canvas");
+            const overlay = document.getElementById("overlay");
+            const recaptureBtn = document.getElementById("recaptureBtn");
+            const feedback = document.getElementById("feedback");
+            const confidenceLabel = document.getElementById("confidenceLabel");
+            const challengeHint = document.getElementById("challengeHint");
 
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("canvas");
-    const recaptureBtn = document.getElementById("recaptureBtn");
-    const feedback = document.getElementById("feedback");
+            const eventId =
+                new URLSearchParams(window.location.search).get("event_id") || "default_event";
 
-    const eventId = new URLSearchParams(window.location.search).get("event_id") || "default_event";
+            let overlayCtx = null;
+            let overlayAnimationId = null;
 
-    function updateFeedback(msg, type="info") {
-        feedback.textContent = msg;
-        feedback.className = "";
-        feedback.classList.add("feedback", `feedback-${type}`);
-    }
+            let framesAnalysed = 0;
+            let framesGoodQuality = 0;
 
-    async function startCamera() {
-        try {
-            updateFeedback("Starting camera...", "info");
+            let currentChallenge = null;
+            const CHALLENGES = [
+                { id: "BLINK", instruction: "Blink clearly once or twice.", hint: "Checking natural eye movement." },
+                { id: "HEAD_TURN", instruction: "Slowly turn your head LEFT and RIGHT.", hint: "Checking real head motion." }
+            ];
 
-            video.classList.remove("hidden");
-            canvas.classList.add("hidden");
-            recaptureBtn.classList.add("hidden");
-
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 720 }},
-                audio: false
-            });
-
-            video.srcObject = stream;
-            await video.play();
-
-            updateFeedback("Please align your face and stay still...", "info");
-
-            setTimeout(() => captureAndSend(stream), 1200);
-
-        } catch (err) {
-            console.error("Camera Access Error:", err);
-            updateFeedback(
-                err.name.includes("Permission")
-                ? "Camera permission denied. Turn on camera access and refresh."
-                : "Camera unavailable.",
-                "error"
-            );
-        }
-    }
-
-    function captureAndSend(stream) {
-        updateFeedback("Capturing best frames, please wait...", "info");
-
-        const ctx = canvas.getContext("2d");
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
-
-        const framesBase64 = [];
-        const TOTAL_FRAMES = 6;
-        const INTERVAL = 180;  // time between frames
-
-        let count = 0;
-
-        const intervalID = setInterval(() => {
-
-            ctx.save();
-            ctx.translate(canvas.width, 0);
-            ctx.scale(-1, 1);  // mirror for selfie camera
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            ctx.restore();
-
-            framesBase64.push(canvas.toDataURL("image/jpeg").split(",")[1]);
-            count++;
-
-            if (count >= TOTAL_FRAMES) {
-                clearInterval(intervalID);
-
-                // Stop camera
-                stream.getTracks().forEach(t => t.stop());
-                canvas.classList.remove("hidden");
-                video.classList.add("hidden");
-
-                sendRecognitionRequest(framesBase64);
+            function pickRandomChallenge() {
+                const idx = Math.floor(Math.random() * CHALLENGES.length);
+                currentChallenge = CHALLENGES[idx];
+                updateFeedback(currentChallenge.instruction, "info");
+                challengeHint.textContent = currentChallenge.hint;
             }
 
-        }, INTERVAL);
-    }
-
-    async function sendRecognitionRequest(framesBase64) {
-        updateFeedback("Analyzing face and matching identity...", "info");
-
-        try {
-            const response = await fetch("/recognize", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    event_id: eventId,
-                    images: framesBase64
-                })
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                updateFeedback("Face Recognized! Redirecting...", "success");
-                sessionStorage.setItem("picme_gallery_data", JSON.stringify(result));
-
-                setTimeout(() => {
-                    window.location.href = `/personal_photo_gallery?event_id=${eventId}&pid=${result.person_id}`;
-                }, 2000);
-
-            } else {
-                updateFeedback(result.error || "No match found. Try again.", "error");
-                recaptureBtn.classList.remove("hidden");
+            function updateFeedback(msg, type = "info") {
+                feedback.textContent = msg;
+                feedback.className = "";
+                feedback.classList.add("feedback", `feedback-${type}`);
             }
 
-        } catch (err) {
-            console.error("Recognition error:", err);
-            updateFeedback("Recognition service unavailable.", "error");
-            recaptureBtn.classList.remove("hidden");
-        }
-    }
+            function updateConfidenceLabel() {
+                if (!framesAnalysed) return;
+                const ratio = framesGoodQuality / framesAnalysed;
+                const percent = Math.round(ratio * 100);
+                confidenceLabel.textContent = `Scan quality: ${percent}%`;
+            }
 
-    recaptureBtn.addEventListener("click", () => startCamera());
+            function startOverlayBoxLoop() {
+                if (!overlayCtx) return;
+                const draw = () => {
+                    overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+                    const boxWidth = overlay.width * 0.5;
+                    const boxHeight = overlay.height * 0.6;
+                    const x = (overlay.width - boxWidth) / 2;
+                    const y = (overlay.height - boxHeight) / 2;
 
-    startCamera();
-});
-</script>
+                    overlayCtx.lineWidth = 3;
+                    overlayCtx.strokeStyle = "rgba(59,130,246,0.95)";
+                    overlayCtx.strokeRect(x, y, boxWidth, boxHeight);
+                    overlayCtx.fillStyle = "rgba(59,130,246,0.06)";
+                    overlayCtx.fillRect(x, y, boxWidth, boxHeight);
 
+                    overlayAnimationId = requestAnimationFrame(draw);
+                };
+                draw();
+            }
+
+            async function startCamera() {
+                try {
+                    updateFeedback("Starting camera...", "info");
+                    challengeHint.textContent = "";
+                    confidenceLabel.textContent = "";
+
+                    video.classList.remove("hidden");
+                    canvas.classList.add("hidden");
+                    recaptureBtn.classList.add("hidden");
+
+                    framesAnalysed = 0;
+                    framesGoodQuality = 0;
+
+                    pickRandomChallenge();
+
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 720 } },
+                        audio: false,
+                    });
+
+                    video.srcObject = stream;
+                    video.onloadedmetadata = () => {
+                        video.play().then(() => {
+                            overlay.width = video.videoWidth;
+                            overlay.height = video.videoHeight;
+                            overlayCtx = overlay.getContext("2d");
+
+                            overlay.classList.remove("hidden");
+                            startOverlayBoxLoop();
+
+                            let countdown = 10;
+                            updateFeedback(`Get ready... scan begins in ${countdown}s`, "info");
+
+                            const timer = setInterval(() => {
+                                countdown--;
+                                updateFeedback(`Scan begins in ${countdown}s`, "info");
+
+                                if (countdown <= 0) {
+                                    clearInterval(timer);
+                                    captureAndSend(stream);
+                                }
+                            }, 1000);
+                        });
+                    };
+                } catch (err) {
+                    console.error(err);
+                    updateFeedback("Camera error — please enable camera access.", "error");
+                }
+            }
+
+            function captureAndSend(stream) {
+                updateFeedback("Capturing frames... stay still and follow the challenge.", "info");
+
+                const ctx = canvas.getContext("2d");
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+
+                const framesBase64 = [];
+                const TOTAL_FRAMES = 10;
+                const INTERVAL = 160;
+
+                let count = 0;
+                const intervalID = setInterval(() => {
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    framesAnalysed++;
+                    const brightness = estimateBrightness(ctx, canvas.width, canvas.height);
+                    if (brightness >= 80) framesGoodQuality++;
+
+                    updateConfidenceLabel();
+
+                    framesBase64.push(canvas.toDataURL("image/jpeg").split(",")[1]);
+                    count++;
+
+                    if (count >= TOTAL_FRAMES) {
+                        clearInterval(intervalID);
+                        stream.getTracks().forEach(t => t.stop());
+                        sendRecognitionRequest(framesBase64);
+                    }
+                }, INTERVAL);
+            }
+
+            function estimateBrightness(ctx, w, h) {
+                const pixels = ctx.getImageData(0,0,w,h).data;
+                let sum = 0;
+                for (let i = 0; i < pixels.length; i += 4) {
+                    sum += (pixels[i] + pixels[i+1] + pixels[i+2]) / 3;
+                }
+                return sum / (pixels.length / 4);
+            }
+
+            async function sendRecognitionRequest(framesBase64) {
+                updateFeedback("Analyzing liveness and matching...", "info");
+
+                const response = await fetch("/recognize", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        event_id: eventId,
+                        images: framesBase64,
+                        challenge_type: currentChallenge.id,
+                    }),
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    updateFeedback("Success! Redirecting...", "success");
+                    sessionStorage.setItem("picme_gallery_data", JSON.stringify(result));
+
+                    setTimeout(() =>
+                        window.location.href = `/personal_photo_gallery?event_id=${eventId}&pid=${result.person_id}`,
+                    1500);
+                } else {
+                    updateFeedback(result.error || "Scan failed. Try again.", "error");
+                    recaptureBtn.classList.remove("hidden");
+                }
+            }
+
+            recaptureBtn.addEventListener("click", () => {
+                canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
+                confidenceLabel.textContent = "";
+                startCamera();
+            });
+
+            startCamera();
+        });
+    </script>
 </body>
 </html>

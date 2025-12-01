@@ -1,131 +1,223 @@
-import os
-import pickle
-import numpy as np
 import cv2
+import numpy as np
 import face_recognition
+import dlib
+
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PREDICTOR_PATH = os.path.join(BASE_DIR, "shape_predictor_68_face_landmarks.dat")
+
+predictor = dlib.shape_predictor(PREDICTOR_PATH)
 
 
-# ---------- ORIGINAL HELPERS (left for compatibility) ----------
 
-def load_known_faces(encodings_file='known_faces.dat'):
-    if os.path.exists(encodings_file):
-        with open(encodings_file, 'rb') as f:
-            known_encodings, known_ids = pickle.load(f)
-        return known_encodings, known_ids
-    return [], []
-
-
-def save_known_faces(encodings, ids, encodings_file='known_faces.dat'):
-    with open(encodings_file, 'wb') as f:
-        pickle.dump((encodings, ids), f)
-
-
-def compare_faces(known_encodings, unknown_encoding, tolerance=0.6):
-    distances = face_recognition.face_distance(known_encodings, unknown_encoding)
-    return list(distances <= tolerance)
-
-
-# ---------- NEW QUALITY + ALIGNMENT + MULTI-FRAME HELPERS ----------
-
-def blur_score(bgr_image: np.ndarray) -> float:
-    """Higher value = sharper image."""
-    gray = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2GRAY)
-    return float(cv2.Laplacian(gray, cv2.CV_64F).var())
-
-
-def brightness_score(bgr_image: np.ndarray) -> float:
-    """Average brightness in [0, 255]."""
-    hsv = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2HSV)
-    return float(np.mean(hsv[:, :, 2]))
-
-
-def align_face_rgb(rgb_image: np.ndarray) -> np.ndarray:
+def align_face(image):
     """
-    Aligns a face by rotating so the eyes are horizontal.
-    If landmarks can't be found, returns the original image.
+    Aligns the face by rotating based on eye angle.
+    Returns aligned image or None if face cannot be detected.
     """
-    landmarks_list = face_recognition.face_landmarks(rgb_image)
-    if not landmarks_list:
-        return rgb_image
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    face_locations = face_recognition.face_locations(rgb)
 
-    landmarks = landmarks_list[0]
-    if 'left_eye' not in landmarks or 'right_eye' not in landmarks:
-        return rgb_image
+    if not face_locations:
+        return None
 
-    left_eye = np.mean(landmarks['left_eye'], axis=0)
-    right_eye = np.mean(landmarks['right_eye'], axis=0)
+    top, right, bottom, left = face_locations[0]
+    rect = dlib.rectangle(left, top, right, bottom)
+
+    shape = predictor(rgb, rect)
+    points = np.array([(shape.part(i).x, shape.part(i).y) for i in range(68)])
+
+    left_eye = points[36:42].mean(axis=0)
+    right_eye = points[42:48].mean(axis=0)
 
     dy = right_eye[1] - left_eye[1]
     dx = right_eye[0] - left_eye[0]
     angle = np.degrees(np.arctan2(dy, dx))
 
-    eyes_center = (
-        (left_eye[0] + right_eye[0]) / 2.0,
-        (left_eye[1] + right_eye[1]) / 2.0,
-    )
+    # Rotate around image center
+    h, w = image.shape[:2]
+    M = cv2.getRotationMatrix2D((w // 2, h // 2), angle, 1)
+    aligned = cv2.warpAffine(image, M, (w, h), flags=cv2.INTER_CUBIC)
 
-    M = cv2.getRotationMatrix2D(eyes_center, angle, 1.0)
-    aligned = cv2.warpAffine(
-        rgb_image,
-        M,
-        (rgb_image.shape[1], rgb_image.shape[0]),
-        flags=cv2.INTER_LINEAR,
-        borderMode=cv2.BORDER_REPLICATE,
-    )
     return aligned
 
 
-def aggregate_face_encoding_from_bgr_frames(frames_bgr):
+def compute_frame_quality(frame):
     """
-    Takes a list of BGR frames from webcam, filters out very blurry / too dark,
-    aligns face, and returns ONE aggregated face encoding.
+    Calculate clarity + brightness, returns score from 0 to 1.
+    """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    sharpness = cv2.Laplacian(gray, cv2.CV_64F).var()
+    brightness = np.mean(gray)
 
-    Returns None if no usable face is detected.
+    sharp_norm = min(1.0, sharpness / 80.0)     # sharp threshold
+    bright_norm = min(1.0, brightness / 150.0)  # brightness threshold
+
+    return (sharp_norm * 0.7) + (bright_norm * 0.3)
+
+
+def aggregate_face_encoding_from_bgr_frames(frames):
+    """
+    Build a strong prediction using multiple frames.
+    Weighted average based on blur + brightness score.
     """
     encodings = []
-    qualities = []
+    weights = []
 
-    for bgr in frames_bgr:
-        if bgr is None:
+    for frame in frames:
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        face_enc = face_recognition.face_encodings(rgb)
+
+        if len(face_enc) == 0:
+            aligned = align_face(frame)
+            if aligned is not None:
+                rgb2 = cv2.cvtColor(aligned, cv2.COLOR_BGR2RGB)
+                face_enc = face_recognition.face_encodings(rgb2)
+
+        if len(face_enc) == 0:
             continue
 
-        # Quality metrics
-        blur = blur_score(bgr)
-        brightness = brightness_score(bgr)
-
-        # Filter really bad frames
-        if blur < 40:          # very blurry
-            continue
-        if brightness < 35:    # almost black
+        weight = compute_frame_quality(frame)
+        if weight < 0.15:
             continue
 
-        rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-        aligned = align_face_rgb(rgb)
-
-        locations = face_recognition.face_locations(aligned)
-        if not locations:
-            continue
-
-        encoding = face_recognition.face_encodings(aligned, locations)[0]
-
-        # Combine blur + brightness into a single "quality" score
-        quality = blur + 0.3 * brightness
-        encodings.append(encoding)
-        qualities.append(quality)
+        encodings.append(face_enc[0])
+        weights.append(weight)
 
     if not encodings:
         return None
 
-    qualities = np.array(qualities, dtype=np.float32)
-    # Normalize to weights
-    weights = qualities / qualities.sum()
+    encodings = np.array(encodings)
+    weights = np.array(weights).reshape(-1, 1)
 
-    enc_stack = np.stack(encodings, axis=0)
-    aggregated = np.average(enc_stack, axis=0, weights=weights)
+    final_encoding = np.sum(encodings * weights, axis=0) / np.sum(weights)
+    return final_encoding
 
-    print(
-        f"--- [ML] Using {len(encodings)} good frames for multi-frame "
-        f"encoding (best quality={qualities.max():.2f}) ---"
-    )
 
-    return aggregated
+# ----------------------------------------------------------------------
+# LIVENESS + SPOOF DETECTION (blink + head turn + motion)
+# ----------------------------------------------------------------------
+
+def _eye_aspect_ratio(eye_points):
+    """
+    Compute Eye Aspect Ratio for one eye (6 landmark points).
+    """
+    p2_minus_p6 = np.linalg.norm(eye_points[1] - eye_points[5])
+    p3_minus_p5 = np.linalg.norm(eye_points[2] - eye_points[4])
+    p1_minus_p4 = np.linalg.norm(eye_points[0] - eye_points[3])
+
+    if p1_minus_p4 == 0:
+        return 0.0
+    ear = (p2_minus_p6 + p3_minus_p5) / (2.0 * p1_minus_p4)
+    return ear
+
+
+def verify_liveness_from_bgr_frames(frames, challenge_type=None):
+    """
+    Basic liveness and anti-spoofing using:
+      - Eye blink detection
+      - Head turn (left/right) based on face center movement
+      - Motion amount between frames (reject static images)
+
+    challenge_type:
+      - "BLINK"
+      - "HEAD_TURN"
+      - None / anything else -> accept BLINK or HEAD_TURN
+
+    Returns: (is_live: bool, debug_info: dict)
+    """
+    if not frames or len(frames) < 2:
+        return False, {"reason": "Not enough frames for liveness"}
+
+    # Thresholds tuned to be reasonably strict but not crazy
+    EAR_OPEN = 0.24
+    EAR_CLOSED = 0.19
+    MOTION_MIN = 3.5        # average pixel difference for motion
+    TURN_MIN = 0.22         # relative center shift vs face width
+
+    blink_count = 0
+    prev_state = "OPEN"
+    centers_x = []
+    widths = []
+    motion_scores = []
+
+    prev_gray = None
+
+    for frame in frames:
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        # Motion (spoof) analysis
+        if prev_gray is not None:
+            diff = cv2.absdiff(gray, prev_gray)
+            motion_scores.append(float(np.mean(diff)))
+        prev_gray = gray
+
+        # Face + landmarks
+        locations = face_recognition.face_locations(rgb)
+        if not locations:
+            continue
+
+        top, right, bottom, left = locations[0]
+        rect = dlib.rectangle(left, top, right, bottom)
+        shape = predictor(gray, rect)
+        points = np.array([(shape.part(i).x, shape.part(i).y) for i in range(68)])
+
+        # Eyes
+        left_eye_pts = points[36:42]
+        right_eye_pts = points[42:48]
+        ear_left = _eye_aspect_ratio(left_eye_pts)
+        ear_right = _eye_aspect_ratio(right_eye_pts)
+        ear = (ear_left + ear_right) / 2.0
+
+        # Blink state machine (OPEN -> CLOSED -> OPEN = 1 blink)
+        if ear < EAR_CLOSED and prev_state == "OPEN":
+            prev_state = "CLOSED"
+        elif ear > EAR_OPEN and prev_state == "CLOSED":
+            blink_count += 1
+            prev_state = "OPEN"
+
+        # Head movement: track horizontal center of face
+        cx = (left + right) / 2.0
+        w = (right - left)
+        centers_x.append(cx)
+        widths.append(w)
+
+    avg_motion = float(np.mean(motion_scores)) if motion_scores else 0.0
+
+    head_turn_score = 0.0
+    if centers_x and widths:
+        shift = max(centers_x) - min(centers_x)
+        avg_width = float(np.mean(widths)) if widths else 1.0
+        if avg_width <= 0:
+            avg_width = 1.0
+        head_turn_score = shift / avg_width
+
+    motion_ok = avg_motion >= MOTION_MIN
+    blink_ok = blink_count >= 1
+    head_turn_ok = head_turn_score >= TURN_MIN
+
+    # Decide based on challenge
+    ct = (challenge_type or "").upper()
+    if ct == "BLINK":
+        passed = motion_ok and blink_ok
+    elif ct == "HEAD_TURN":
+        passed = motion_ok and head_turn_ok
+    else:
+        # Random mode: accept either blink or head turn, but always require motion
+        passed = motion_ok and (blink_ok or head_turn_ok)
+
+    debug = {
+        "challenge_type": ct or "AUTO",
+        "blink_count": blink_count,
+        "avg_motion": round(avg_motion, 3),
+        "head_turn_score": round(head_turn_score, 3),
+        "motion_ok": motion_ok,
+        "blink_ok": blink_ok,
+        "head_turn_ok": head_turn_ok,
+        "passed": passed,
+    }
+
+    return passed, debug
