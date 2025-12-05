@@ -155,10 +155,10 @@
             gap: 6px;
         }
         
-        .btn-primary { background: #3b82f6; color: white; }
-        .btn-success { background: #10b981; color: white; }
-        .btn-info { background: #06b6d4; color: white; }
-        .btn-danger { background: #ef4444; color: white; }
+        .btn-primary { background: #6b7280; color: white; }
+        .btn-success { background: #6b7280; color: white; }
+        .btn-info { background: #6b7280; color: white; }
+        .btn-danger { background: #6b7280; color: white; }
         
         .btn:hover { 
             opacity: 0.9; 
@@ -387,26 +387,37 @@
 </head>
 <body class="bg-background">
     <!-- Navigation -->
-    <nav class="main-nav">
-        <div class="nav-container">
-            <a href="/" class="nav-brand">PicMe</a>
-            
-            <div class="nav-links">
-                <a href="/homepage">🏠 Home</a>
-                <a href="/event_discovery">🎫 Events</a>
-                <a href="/event_organizer" class="active">👨‍💼 Organizer</a>
-                <a href="/personal_photo_gallery">📸 My Photos</a>
-                <a href="/biometric_authentication_portal">🔍 Face Scan</a>
-            </div>
-            
-            <div class="nav-user">
-                <div class="user-avatar">O</div>
-                <a href="/logout" class="btn btn-primary">Logout</a>
+    <nav class="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-gray-200 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Logo -->
+                <a href="/homepage" class="flex items-center space-x-2">
+                    <svg class="w-8 h-8 text-indigo-600" viewBox="0 0 32 32" fill="currentColor">
+                        <path d="M16 2L20 10H28L22 16L24 24L16 20L8 24L10 16L4 10H12L16 2Z"/>
+                        <circle cx="16" cy="16" r="6" fill="none" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                    <span class="text-xl font-bold text-indigo-600">PicMe</span>
+                </a>
+                
+                <!-- Desktop Navigation -->
+                <div class="hidden md:flex items-center space-x-8">
+                    <a href="/homepage" class="text-gray-600 hover:text-indigo-600 transition-colors duration-200">Home</a>
+                    <a href="/event_discovery" class="text-gray-600 hover:text-indigo-600 transition-colors duration-200">Events</a>
+                    <a href="/event_organizer" class="text-indigo-600 font-medium">Organizer</a>
+                    <a href="/personal_photo_gallery" class="text-gray-600 hover:text-indigo-600 transition-colors duration-200">My Photos</a>
+                    <a href="/biometric_authentication_portal" class="text-gray-600 hover:text-indigo-600 transition-colors duration-200">Scan Face</a>
+                </div>
+                
+                <!-- User Authentication -->
+                <div class="flex items-center space-x-4">
+                    <span class="text-gray-600 text-sm font-medium hidden md:block">Welcome, {{ session.get('admin_organization', session.get('user_email', 'Organizer')) }}</span>
+                    <a href="/logout" class="px-4 py-2 rounded-md text-sm font-medium text-red-600 border border-red-600 hover:bg-red-50 transition-colors duration-200">Logout</a>
+                </div>
             </div>
         </div>
     </nav>
 
-    <div class="organizer-container">
+    <div class="organizer-container" style="padding-top: 80px;">
         <!-- Page Header -->
         <div class="page-header">
             <div class="max-w-6xl mx-auto px-6">
@@ -418,7 +429,7 @@
         <div class="max-w-6xl mx-auto px-6">
             <!-- Create Event Form -->
             <div class="create-event-form">
-                <h2 class="text-2xl font-bold mb-6 text-gray-800">🎉 Create New Event</h2>
+                <h2 class="text-2xl font-bold mb-6 text-gray-800">Create New Event</h2>
                 <div id="alert-container"></div>
                 
                 <form id="createEventForm">
@@ -441,20 +452,20 @@
                         <div class="form-group">
                             <label for="eventCategory">Category</label>
                             <select id="eventCategory" name="eventCategory">
-                                <option value="Festival">🎵 Festival</option>
-                                <option value="Corporate">💼 Corporate</option>
-                                <option value="Wedding">💒 Wedding</option>
-                                <option value="Conference">🎤 Conference</option>
-                                <option value="Party">🎉 Party</option>
-                                <option value="Sports">⚽ Sports</option>
-                                <option value="Other">🔖 Other</option>
+                                <option value="Festival">Festival</option>
+                                <option value="Corporate">Corporate</option>
+                                <option value="Wedding">Wedding</option>
+                                <option value="Conference">Conference</option>
+                                <option value="Party">Party</option>
+                                <option value="Sports">Sports</option>
+                                <option value="Other">Other</option>
                             </select>
                         </div>
                     </div>
                     
                     <div class="mt-6">
-                        <button type="submit" class="btn-create">
-                            ✨ Create Event
+                        <button type="submit" style="background: #6b7280; color: white; padding: 14px 32px; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s ease;">
+                            Create Event
                         </button>
                     </div>
                 </form>
@@ -463,9 +474,9 @@
             <!-- My Events -->
             <div class="my-events-section">
                 <div class="flex justify-between items-center mb-6">
-                    <h2 class="text-2xl font-bold text-gray-800">📋 My Events</h2>
-                    <button onclick="loadMyEvents()" class="btn btn-info">
-                        🔄 Refresh
+                    <h2 class="text-2xl font-bold text-gray-800">My Events</h2>
+                    <button onclick="loadMyEvents()" style="background: #6b7280; color: white; padding: 10px 18px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 500;">
+                        Refresh
                     </button>
                 </div>
                 <div id="eventsGrid" class="events-grid">
@@ -479,14 +490,14 @@
     <div id="qrModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="qrEventName">📱 Event QR Code</h3>
+                <h3 id="qrEventName">Event QR Code</h3>
                 <span class="close" onclick="closeModal('qrModal')">&times;</span>
             </div>
             <div class="qr-container">
                 <img id="qrCodeImage" src="" alt="QR Code">
                 <p class="mt-4 text-gray-600">Share this QR code with event attendees</p>
                 <button onclick="downloadQR()" class="btn btn-primary mt-4">
-                    📥 Download QR Code
+                    Download QR Code
                 </button>
             </div>
         </div>
@@ -496,16 +507,15 @@
     <div id="uploadModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="uploadEventName">📸 Upload Photos</h3>
+                <h3 id="uploadEventName">Upload Photos</h3>
                 <span class="close" onclick="closeModal('uploadModal')">&times;</span>
             </div>
             
             <div class="upload-area" id="uploadArea">
-                <div class="text-4xl mb-4">📷</div>
                 <p class="text-lg mb-4">Drop photos here or click to select</p>
                 <input type="file" id="photoInput" multiple accept="image/*" style="display: none;">
                 <button class="btn btn-primary" onclick="document.getElementById('photoInput').click()">
-                    📁 Select Photos
+                    Select Photos
                 </button>
             </div>
             
@@ -524,7 +534,7 @@
     <div id="deleteModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>🗑️ Delete Event</h3>
+                <h3>Delete Event</h3>
                 <span class="close" onclick="closeModal('deleteModal')">&times;</span>
             </div>
             <p class="mb-6">Are you sure you want to delete this event? This action cannot be undone.</p>
@@ -539,7 +549,7 @@
     <div id="photosModal" class="modal">
         <div class="modal-content" style="max-width: 1200px;">
             <div class="modal-header">
-                <h3 id="photosEventName">🖼️ Event Photos</h3>
+                <h3 id="photosEventName">Event Photos</h3>
                 <span class="close" onclick="closeModal('photosModal')">&times;</span>
             </div>
             <div id="photosLoading" style="text-align: center; padding: 40px;">
@@ -554,7 +564,7 @@
     <!-- Fullscreen Photo Viewer -->
     <div id="fullscreenViewer" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 10000; justify-content: center; align-items: center;">
         <button onclick="closeFullscreen()" style="position: absolute; top: 20px; right: 20px; background: rgba(255,255,255,0.2); border: none; color: white; font-size: 30px; cursor: pointer; width: 50px; height: 50px; border-radius: 50%; z-index: 10001;">&times;</button>
-        <button onclick="deleteCurrentPhoto()" style="position: absolute; top: 20px; right: 90px; background: rgba(255,0,0,0.7); border: none; color: white; font-size: 18px; cursor: pointer; padding: 10px 20px; border-radius: 8px; z-index: 10001;">🗑️ Delete</button>
+        <button onclick="deleteCurrentPhoto()" style="position: absolute; top: 20px; right: 90px; background: #6b7280; border: none; color: white; font-size: 18px; cursor: pointer; padding: 10px 20px; border-radius: 8px; z-index: 10001;">Delete</button>
         <img id="fullscreenImage" src="" style="max-width: 90%; max-height: 90%; object-fit: contain;">
     </div>
 
@@ -589,15 +599,15 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showAlert('🎉 Event created successfully!', 'success');
+                    showAlert('Event created successfully!', 'success');
                     this.reset();
                     loadMyEvents(); // Refresh events list
                 } else {
-                    showAlert('❌ ' + (data.error || 'Failed to create event'), 'error');
+                    showAlert((data.error || 'Failed to create event'), 'error');
                 }
             })
             .catch(error => {
-                showAlert('❌ Network error occurred', 'error');
+                showAlert('Network error occurred', 'error');
                 console.error('Error:', error);
             });
         });
@@ -610,12 +620,12 @@
                 if (data.success) {
                     displayEvents(data.events);
                 } else {
-                    showAlert('❌ Failed to load events', 'error');
+                    showAlert('Failed to load events', 'error');
                 }
             })
             .catch(error => {
                 console.error('Error loading events:', error);
-                showAlert('❌ Failed to load events', 'error');
+                showAlert('Failed to load events', 'error');
             });
         }
         
@@ -626,7 +636,6 @@
             if (events.length === 0) {
                 eventsGrid.innerHTML = `
                     <div class="col-span-full text-center py-12">
-                        <div class="text-6xl mb-4">📅</div>
                         <h3 class="text-xl font-semibold text-gray-600 mb-2">No events created yet</h3>
                         <p class="text-gray-500">Create your first event using the form above!</p>
                     </div>
@@ -639,28 +648,28 @@
                     <div class="event-header">
                         <h3>${event.name}</h3>
                         <div class="event-info">
-                            <div>📍 ${event.location}</div>
-                            <div>📅 ${new Date(event.date).toLocaleDateString()}</div>
-                            <div>🏷️ ${event.category}</div>
+                            <div>${event.location}</div>
+                            <div>${new Date(event.date).toLocaleDateString()}</div>
+                            <div>${event.category}</div>
                         </div>
                     </div>
                     <div class="event-body">
                         <div class="event-stats">
-                            <span>📸 ${event.photos_count} photos</span>
-                            <span class="text-xs">🆔 ${event.id}</span>
+                            <span>${event.photos_count} photos</span>
+                            <span class="text-xs">ID: ${event.id}</span>
                         </div>
                         <div class="event-actions">
                             <button class="btn btn-info" onclick="showQRCode('${event.id}', '${event.name}')">
-                                📱 QR Code
+                                QR Code
                             </button>
                             <button class="btn btn-primary" onclick="showPhotosModal('${event.id}', '${event.name}')">
-                                🖼️ View Photos
+                                View Photos
                             </button>
                             <button class="btn btn-success" onclick="showUploadModal('${event.id}', '${event.name}')">
-                                📤 Upload Photos
+                                Upload Photos
                             </button>
                             <button class="btn btn-danger" onclick="showDeleteConfirm('${event.id}', '${event.name}')">
-                                🗑️ Delete
+                                Delete
                             </button>
                         </div>
                     </div>
@@ -670,7 +679,7 @@
         
         // Show QR Code Modal
         function showQRCode(eventId, eventName) {
-            document.getElementById('qrEventName').innerHTML = `📱 ${eventName} - QR Code`;
+            document.getElementById('qrEventName').innerHTML = `${eventName} - QR Code`;
             document.getElementById('qrCodeImage').src = `/api/qr_code/${eventId}`;
             document.getElementById('qrModal').style.display = 'block';
             currentEventId = eventId;
@@ -686,7 +695,7 @@
         // Show Upload Modal
         function showUploadModal(eventId, eventName) {
             currentEventId = eventId;
-            document.getElementById('uploadEventName').innerHTML = `📸 Upload Photos - ${eventName}`;
+            document.getElementById('uploadEventName').innerHTML = `Upload Photos - ${eventName}`;
             document.getElementById('uploadModal').style.display = 'block';
             
             // Reset upload area
@@ -710,15 +719,15 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    showAlert('🗑️ Event deleted successfully!', 'success');
+                    showAlert('Event deleted successfully!', 'success');
                     closeModal('deleteModal');
                     loadMyEvents(); // Refresh events list
                 } else {
-                    showAlert('❌ ' + (data.error || 'Failed to delete event'), 'error');
+                    showAlert((data.error || 'Failed to delete event'), 'error');
                 }
             })
             .catch(error => {
-                showAlert('❌ Network error occurred', 'error');
+                showAlert('Network error occurred', 'error');
                 console.error('Error:', error);
             });
         }
@@ -727,7 +736,7 @@
         let currentPhotoData = null;
         function showPhotosModal(eventId, eventName) {
             currentEventId = eventId;
-            document.getElementById('photosEventName').innerHTML = `🖼️ ${eventName} - Original Photos`;
+            document.getElementById('photosEventName').innerHTML = `${eventName} - Original Photos`;
             document.getElementById('photosModal').style.display = 'block';
             document.getElementById('photosLoading').style.display = 'block';
             document.getElementById('photosGrid').innerHTML = '';
