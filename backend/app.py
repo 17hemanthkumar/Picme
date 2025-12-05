@@ -622,6 +622,10 @@ def create_event():
         else:
             events_data = []
 
+        # Determine who created the event (admin or regular user)
+        created_by_admin_id = session.get('admin_id') if session.get('admin_logged_in') else None
+        created_by_user_id = session.get('user_id') if not session.get('admin_logged_in') else None
+        
         new_event = {
             "id": event_id,
             "name": event_name,
@@ -631,7 +635,8 @@ def create_event():
             "image": "/static/images/default_event.jpg",
             "photos_count": 0,
             "qr_code": f"/api/qr_code/{event_id}",
-            "created_by": session.get('user_id'),
+            "created_by_admin_id": created_by_admin_id,
+            "created_by_user_id": created_by_user_id,
             "created_at": datetime.now().isoformat(),
             "sample_photos": []
         }
@@ -724,10 +729,22 @@ def get_my_events():
             with open(EVENTS_DATA_PATH, 'r') as f:
                 all_events = json.load(f)
 
-            user_events = [
-                event for event in all_events
-                if event.get('created_by') == session.get('user_id')
-            ]
+            # Filter events based on who is logged in
+            if session.get('admin_logged_in'):
+                # Admin sees only their events
+                admin_id = session.get('admin_id')
+                user_events = [
+                    event for event in all_events
+                    if event.get('created_by_admin_id') == admin_id
+                ]
+            else:
+                # Regular user sees only their events
+                user_id = session.get('user_id')
+                user_events = [
+                    event for event in all_events
+                    if event.get('created_by_user_id') == user_id
+                ]
+            
             return jsonify({"success": True, "events": user_events})
 
         return jsonify({"success": True, "events": []})

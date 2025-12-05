@@ -8,7 +8,8 @@
     "image": "/static/images/default_event.jpg",
     "photos_count": 16,
     "qr_code": "/api/qr_code/event_c9cff2be",
-    "created_by": null,
+    "created_by_admin_id": 1,
+    "created_by_user_id": null,
     "created_at": "2025-11-30T18:07:42.002049",
     "sample_photos": []
   }
