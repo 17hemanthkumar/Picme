@@ -16,13 +16,13 @@ bind = "0.0.0.0:8080"
 backlog = 2048
 
 # Worker processes
-# Use 1 worker to avoid multiple ML model loads and reduce memory usage
+# Use 2-4 workers for better performance
 # Can be overridden with GUNICORN_WORKERS environment variable
-workers = int(os.environ.get('GUNICORN_WORKERS', '1'))
+workers = int(os.environ.get('GUNICORN_WORKERS', '2'))
 worker_class = 'sync'
 worker_connections = 1000
-timeout = 300  # 300 seconds (5 minutes) for ML model loading and face recognition operations
-keepalive = 5
+timeout = 120  # 120 seconds (2 minutes) - reduced from 300 for faster timeouts
+keepalive = 2  # Reduced from 5 for faster connection recycling
 
 # Graceful shutdown
 graceful_timeout = 30
@@ -32,7 +32,7 @@ max_requests_jitter = 50  # Add randomness to prevent all workers restarting at 
 # Logging
 accesslog = '-'  # Log to stdout
 errorlog = '-'   # Log to stdout
-loglevel = 'info'
+loglevel = 'warning'  # Changed from 'info' to 'warning' for better performance
 access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
 
 # Process naming

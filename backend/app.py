@@ -32,8 +32,9 @@ from backend.face_utils import aggregate_face_encoding_from_bgr_frames, verify_l
 # --- CONFIGURATION ---
 import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging - use WARNING level for production performance
+# Set to INFO only for debugging
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -41,7 +42,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(
     __name__,
     template_folder=os.path.join(BASE_DIR, "..", "frontend", "pages"),
-    static_folder=os.path.join(BASE_DIR, "..", "frontend")
+    static_folder=os.path.join(BASE_DIR, "..", "frontend", "static"),
+    static_url_path='/static'
 )
 
 # Environment variable configuration with logging
@@ -100,11 +102,24 @@ except Exception as e:
 
 # --- DISABLE CACHING FOR ALL RESPONSES ---
 @app.after_request
-def add_no_cache_headers(response):
-    """Disable caching for all responses to prevent stale content"""
-    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '0'
+def add_cache_headers(response):
+    """
+    Optimize caching for better performance:
+    - Static assets (CSS, JS, images): Cache for 1 hour
+    - HTML pages: No cache (always fresh)
+    - API responses: No cache (always fresh)
+    """
+    path = request.path
+    
+    # Cache static assets for better performance
+    if path.startswith('/static/') or path.endswith(('.css', '.js', '.png', '.jpg', '.jpeg', '.svg', '.ico')):
+        response.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour
+    else:
+        # No cache for HTML pages and API responses
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    
     return response
 
 
@@ -219,58 +234,123 @@ def process_images(event_id):
         
         input_dir = os.path.join(app.config['UPLOAD_FOLDER'], event_id)
         output_dir = os.path.join(app.config['PROCESSED_FOLDER'], event_id)
-        os.makedirs(output_dir, exist_ok=True)
+        
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+            logger.info(f"[PHOTO_PROCESSING] Output directory ready - event_id: {event_id}, path: {output_dir}, operation: process_images")
+        except Exception as e:
+            logger.error(f"[PHOTO_PROCESSING] Failed to create output directory - event_id: {event_id}, path: {output_dir}, error: {str(e)}, operation: process_images")
+            return
 
-        print(f"--- [PROCESS] Starting for event: {event_id} ---")
+        logger.info(f"[PHOTO_PROCESSING] Starting processing for event: {event_id}, input_dir: {input_dir}, output_dir: {output_dir}, operation: process_images")
+
+        if not os.path.exists(input_dir):
+            logger.error(f"[PHOTO_PROCESSING] Input directory not found - event_id: {event_id}, path: {input_dir}, operation: process_images")
+            return
+
+        photos_processed = 0
+        photos_failed = 0
+        total_faces_detected = 0
 
         for filename in os.listdir(input_dir):
             if (filename.lower().endswith(('.png', '.jpg', '.jpeg'))
                     and not filename.endswith('_qr.png')):
 
                 image_path = os.path.join(input_dir, filename)
-                print(f"--- [PROCESS] Image: {filename}")
+                logger.info(f"[PHOTO_PROCESSING] Processing image - event_id: {event_id}, filename: {filename}, path: {image_path}, operation: process_images")
 
+                # Load image with error handling
                 try:
+                    logger.info(f"[PHOTO_PROCESSING] Loading image file - event_id: {event_id}, filename: {filename}, operation: load_image")
                     image = face_recognition.load_image_file(image_path)
+                    logger.info(f"[PHOTO_PROCESSING] Image loaded successfully - event_id: {event_id}, filename: {filename}, shape: {image.shape}, operation: load_image")
+                except Exception as e:
+                    logger.error(f"[PHOTO_PROCESSING] Failed to load image - event_id: {event_id}, filename: {filename}, error: {str(e)}, operation: load_image")
+                    photos_failed += 1
+                    continue
+
+                # Face detection with error handling
+                try:
+                    logger.info(f"[PHOTO_PROCESSING] Starting face detection - event_id: {event_id}, filename: {filename}, operation: face_detection")
                     face_encodings = face_recognition.face_encodings(image)
-                    print(f"--- [PROCESS] Found {len(face_encodings)} face(s) in {filename}")
+                    face_count = len(face_encodings)
+                    total_faces_detected += face_count
+                    logger.info(f"[PHOTO_PROCESSING] Face detection complete - event_id: {event_id}, filename: {filename}, faces_detected: {face_count}, operation: face_detection")
+                except Exception as e:
+                    logger.error(f"[PHOTO_PROCESSING] Face detection failed - event_id: {event_id}, filename: {filename}, error: {str(e)}, operation: face_detection")
+                    photos_failed += 1
+                    continue
 
-                    # Learn / update all faces in this photo
-                    person_ids_in_image = set()
-                    for encoding in face_encodings:
-                        person_id = model.learn_face(encoding)
-                        if person_id:
-                            person_ids_in_image.add(person_id)
+                # Face learning with error handling
+                person_ids_in_image = set()
+                if face_encodings:
+                    logger.info(f"[PHOTO_PROCESSING] Starting face learning - event_id: {event_id}, filename: {filename}, face_count: {face_count}, operation: face_learning")
+                    for idx, encoding in enumerate(face_encodings):
+                        try:
+                            person_id = model.learn_face(encoding)
+                            if person_id:
+                                person_ids_in_image.add(person_id)
+                                logger.info(f"[PHOTO_PROCESSING] Face learned - event_id: {event_id}, filename: {filename}, face_index: {idx}, person_id: {person_id}, operation: face_learning")
+                            else:
+                                logger.warning(f"[PHOTO_PROCESSING] Face learning returned no ID - event_id: {event_id}, filename: {filename}, face_index: {idx}, operation: face_learning")
+                        except Exception as e:
+                            logger.error(f"[PHOTO_PROCESSING] Face learning failed - event_id: {event_id}, filename: {filename}, face_index: {idx}, error: {str(e)}, operation: face_learning")
+                            continue
 
-                    # Organize photos into individual / group per person
-                    if face_encodings:
-                        for pid in person_ids_in_image:
-                            person_dir = os.path.join(output_dir, pid)
-                            indiv_dir = os.path.join(person_dir, "individual")
-                            group_dir = os.path.join(person_dir, "group")
+                    logger.info(f"[PHOTO_PROCESSING] Face learning complete - event_id: {event_id}, filename: {filename}, person_ids: {list(person_ids_in_image)}, operation: face_learning")
+
+                # Organize photos into individual / group per person
+                if face_encodings and person_ids_in_image:
+                    logger.info(f"[PHOTO_PROCESSING] Starting photo organization - event_id: {event_id}, filename: {filename}, person_count: {len(person_ids_in_image)}, operation: photo_organization")
+                    
+                    for pid in person_ids_in_image:
+                        person_dir = os.path.join(output_dir, pid)
+                        indiv_dir = os.path.join(person_dir, "individual")
+                        group_dir = os.path.join(person_dir, "group")
+                        
+                        # Create directories with error handling
+                        try:
                             os.makedirs(indiv_dir, exist_ok=True)
                             os.makedirs(group_dir, exist_ok=True)
+                            logger.info(f"[PHOTO_PROCESSING] Directories created - event_id: {event_id}, person_id: {pid}, individual: {indiv_dir}, group: {group_dir}, operation: create_directories")
+                        except Exception as e:
+                            logger.error(f"[PHOTO_PROCESSING] Failed to create directories - event_id: {event_id}, person_id: {pid}, error: {str(e)}, operation: create_directories")
+                            continue
 
+                        # Copy file with error handling
+                        try:
                             if len(face_encodings) == 1:
                                 # Individual photo
-                                shutil.copy(
-                                    image_path,
-                                    os.path.join(indiv_dir, filename)
-                                )
+                                dest_path = os.path.join(indiv_dir, filename)
+                                logger.info(f"[PHOTO_PROCESSING] Copying individual photo - event_id: {event_id}, filename: {filename}, person_id: {pid}, source: {image_path}, dest: {dest_path}, operation: file_copy")
+                                shutil.copy(image_path, dest_path)
+                                logger.info(f"[PHOTO_PROCESSING] Individual photo copied successfully - event_id: {event_id}, filename: {filename}, person_id: {pid}, dest: {dest_path}, operation: file_copy")
                             else:
                                 # Group photo (add watermarked_ prefix)
-                                shutil.copy(
-                                    image_path,
-                                    os.path.join(group_dir, f"watermarked_{filename}")
-                                )
+                                dest_filename = f"watermarked_{filename}"
+                                dest_path = os.path.join(group_dir, dest_filename)
+                                logger.info(f"[PHOTO_PROCESSING] Copying group photo - event_id: {event_id}, filename: {filename}, person_id: {pid}, source: {image_path}, dest: {dest_path}, operation: file_copy")
+                                shutil.copy(image_path, dest_path)
+                                logger.info(f"[PHOTO_PROCESSING] Group photo copied successfully - event_id: {event_id}, filename: {filename}, person_id: {pid}, dest: {dest_path}, operation: file_copy")
+                        except Exception as e:
+                            logger.error(f"[PHOTO_PROCESSING] File copy failed - event_id: {event_id}, filename: {filename}, person_id: {pid}, error: {str(e)}, operation: file_copy")
+                            continue
+                    
+                    photos_processed += 1
+                    logger.info(f"[PHOTO_PROCESSING] Photo organization complete - event_id: {event_id}, filename: {filename}, operation: photo_organization")
+                elif not face_encodings:
+                    logger.warning(f"[PHOTO_PROCESSING] No faces detected in photo - event_id: {event_id}, filename: {filename}, operation: process_images")
+                    photos_failed += 1
+                else:
+                    logger.warning(f"[PHOTO_PROCESSING] No person IDs generated - event_id: {event_id}, filename: {filename}, operation: process_images")
+                    photos_failed += 1
 
-                except Exception as e:
-                    print(f"  -> ERROR processing {filename}: {e}")
-
-        print(f"--- [PROCESS] Finished for event: {event_id} ---")
+        logger.info(f"[PHOTO_PROCESSING] Processing complete - event_id: {event_id}, photos_processed: {photos_processed}, photos_failed: {photos_failed}, total_faces_detected: {total_faces_detected}, operation: process_images")
 
     except Exception as e:
-        print(f"  -> FATAL ERROR during processing for event {event_id}: {e}")
+        logger.error(f"[PHOTO_PROCESSING] Fatal error during processing - event_id: {event_id}, error: {str(e)}, operation: process_images")
+        import traceback
+        logger.error(f"[PHOTO_PROCESSING] Traceback: {traceback.format_exc()}")
 
 
 # --- PAGE ROUTES ---
@@ -281,19 +361,29 @@ def serve_index():
 
 @app.route('/picme.jpeg')
 def serve_logo():
-    """Serve the PicMe logo image"""
-    frontend_dir = os.path.join(BASE_DIR, '..', 'frontend')
-    # Try JPEG first, fallback to SVG
-    if os.path.exists(os.path.join(frontend_dir, 'picme.jpeg')):
-        return send_from_directory(frontend_dir, 'picme.jpeg')
+    """Serve the PicMe logo image - redirects to SVG"""
+    static_images_dir = os.path.join(BASE_DIR, '..', 'frontend', 'static', 'images')
+    # Check if JPEG exists, otherwise serve SVG
+    jpeg_path = os.path.join(static_images_dir, 'picme.jpeg')
+    svg_path = os.path.join(static_images_dir, 'picme.svg')
+    
+    if os.path.exists(jpeg_path):
+        return send_from_directory(static_images_dir, 'picme.jpeg')
+    elif os.path.exists(svg_path):
+        return send_from_directory(static_images_dir, 'picme.svg', mimetype='image/svg+xml')
     else:
-        return send_from_directory(frontend_dir, 'picme.svg')
+        return "Logo not found", 404
 
 @app.route('/picme.svg')
 def serve_logo_svg():
     """Serve the PicMe logo SVG"""
-    frontend_dir = os.path.join(BASE_DIR, '..', 'frontend')
-    return send_from_directory(frontend_dir, 'picme.svg')
+    static_images_dir = os.path.join(BASE_DIR, '..', 'frontend', 'static', 'images')
+    svg_path = os.path.join(static_images_dir, 'picme.svg')
+    
+    if os.path.exists(svg_path):
+        return send_from_directory(static_images_dir, 'picme.svg', mimetype='image/svg+xml')
+    else:
+        return "Logo not found", 404
 
 
 @app.route('/login')
@@ -848,43 +938,81 @@ def create_event():
 
 @app.route('/api/qr_code/<event_id>')
 def get_qr_code(event_id):
+    # Store original value for logging
+    original_event_id = event_id
+    
+    logger.info(f"[PHOTO_SERVING] Request for QR code - event_id: {event_id}, operation: get_qr_code")
+    
     # Sanitize event_id to prevent path traversal
     event_id = sanitize_path_component(event_id)
+    
+    # Log if sanitization changed the value (potential security violation)
+    if event_id != original_event_id:
+        logger.warning(f"[SECURITY] Path sanitization applied - original_event_id: {original_event_id}, sanitized_event_id: {event_id}, operation: get_qr_code")
+    
     qr_path = os.path.join(app.config['UPLOAD_FOLDER'], event_id, f"{event_id}_qr.png")
+    
     if os.path.exists(qr_path):
-        return send_from_directory(
-            os.path.join(app.config['UPLOAD_FOLDER'], event_id),
-            f"{event_id}_qr.png"
-        )
+        try:
+            logger.info(f"[PHOTO_SERVING] Successfully serving QR code - event_id: {event_id}, operation: get_qr_code")
+            return send_from_directory(
+                os.path.join(app.config['UPLOAD_FOLDER'], event_id),
+                f"{event_id}_qr.png"
+            )
+        except Exception as e:
+            logger.error(f"[PHOTO_SERVING] Error serving QR code - event_id: {event_id}, error: {str(e)}, operation: get_qr_code")
+            return "Internal Server Error", 500
+    
+    logger.error(f"[PHOTO_SERVING] QR code not found - event_id: {event_id}, path: {qr_path}, operation: get_qr_code")
     return "QR Code not found", 404
 
 
 @app.route('/api/events/<event_id>/thumbnail')
 def get_event_thumbnail(event_id):
     """Serve event thumbnail"""
+    # Store original value for logging
+    original_event_id = event_id
+    
+    logger.info(f"[PHOTO_SERVING] Request for event thumbnail - event_id: {event_id}, operation: get_event_thumbnail")
+    
     # Sanitize event_id to prevent path traversal
     event_id = sanitize_path_component(event_id)
     
-    # Load events data to get thumbnail filename
-    if os.path.exists(EVENTS_DATA_PATH):
-        with open(EVENTS_DATA_PATH, 'r') as f:
-            events_data = json.load(f)
-        
-        # Find the event
-        event = next((e for e in events_data if e['id'] == event_id), None)
-        if event and event.get('thumbnail_filename'):
-            # Sanitize thumbnail filename
-            thumbnail_filename = sanitize_filename(event['thumbnail_filename'])
-            thumbnail_path = os.path.join(
-                app.config['UPLOAD_FOLDER'], 
-                event_id, 
-                thumbnail_filename
-            )
-            if os.path.exists(thumbnail_path):
-                return send_from_directory(
-                    os.path.join(app.config['UPLOAD_FOLDER'], event_id),
+    # Log if sanitization changed the value (potential security violation)
+    if event_id != original_event_id:
+        logger.warning(f"[SECURITY] Path sanitization applied - original_event_id: {original_event_id}, sanitized_event_id: {event_id}, operation: get_event_thumbnail")
+    
+    try:
+        # Load events data to get thumbnail filename
+        if os.path.exists(EVENTS_DATA_PATH):
+            with open(EVENTS_DATA_PATH, 'r') as f:
+                events_data = json.load(f)
+            
+            # Find the event
+            event = next((e for e in events_data if e['id'] == event_id), None)
+            if event and event.get('thumbnail_filename'):
+                # Sanitize thumbnail filename
+                thumbnail_filename = sanitize_filename(event['thumbnail_filename'])
+                thumbnail_path = os.path.join(
+                    app.config['UPLOAD_FOLDER'], 
+                    event_id, 
                     thumbnail_filename
                 )
+                if os.path.exists(thumbnail_path):
+                    logger.info(f"[PHOTO_SERVING] Successfully serving thumbnail - event_id: {event_id}, filename: {thumbnail_filename}, operation: get_event_thumbnail")
+                    return send_from_directory(
+                        os.path.join(app.config['UPLOAD_FOLDER'], event_id),
+                        thumbnail_filename
+                    )
+                else:
+                    logger.error(f"[PHOTO_SERVING] Thumbnail file not found - event_id: {event_id}, filename: {thumbnail_filename}, path: {thumbnail_path}, operation: get_event_thumbnail")
+            else:
+                logger.error(f"[PHOTO_SERVING] Event not found or no thumbnail - event_id: {event_id}, operation: get_event_thumbnail")
+        else:
+            logger.error(f"[PHOTO_SERVING] Events data file not found - path: {EVENTS_DATA_PATH}, operation: get_event_thumbnail")
+    except Exception as e:
+        logger.error(f"[PHOTO_SERVING] Error serving thumbnail - event_id: {event_id}, error: {str(e)}, operation: get_event_thumbnail")
+        return "Internal Server Error", 500
     
     return "Thumbnail not found", 404
 
@@ -1250,65 +1378,287 @@ def delete_event(event_id):
         }), 500
 
 
+# --- HELPER FUNCTIONS FOR PHOTO AGGREGATION ---
+def scan_uploads_folder(event_id):
+    """
+    Scan uploads folder for original photos.
+    Returns list of photo metadata dictionaries.
+    
+    Args:
+        event_id: The event identifier
+        
+    Returns:
+        List of dicts with keys: filename, source, type, url
+    """
+    photos = []
+    uploads_dir = os.path.join(app.config['UPLOAD_FOLDER'], event_id)
+    
+    logger.info(f"[PHOTO_AGGREGATION] Scanning uploads folder for event: {event_id}")
+    
+    if not os.path.exists(uploads_dir):
+        logger.info(f"[PHOTO_AGGREGATION] Uploads folder does not exist for event: {event_id}")
+        return photos
+    
+    # Filter to only include image files
+    allowed_extensions = {'.jpg', '.jpeg', '.png'}
+    
+    try:
+        for filename in os.listdir(uploads_dir):
+            # Skip QR codes
+            if filename.endswith('_qr.png'):
+                logger.debug(f"[PHOTO_AGGREGATION] Skipping QR code: {filename}")
+                continue
+            
+            # Check if file has valid image extension
+            ext = os.path.splitext(filename)[1].lower()
+            if ext in allowed_extensions:
+                photos.append({
+                    'filename': filename,
+                    'source': 'uploads',
+                    'type': 'original',
+                    'url': f"/api/events/{event_id}/uploads/{filename}"
+                })
+                logger.debug(f"[PHOTO_AGGREGATION] Added upload photo: {filename}")
+        
+        logger.info(f"[PHOTO_AGGREGATION] Found {len(photos)} photos in uploads folder for event: {event_id}")
+    except Exception as e:
+        logger.error(f"[PHOTO_AGGREGATION] Error scanning uploads folder for event {event_id}: {e}")
+    
+    return photos
+
+
+def scan_processed_folder(event_id):
+    """
+    Scan processed folder for group photos only.
+    Individual photos remain private and are not included.
+    
+    Deduplicates photos by filename - if the same photo appears in multiple
+    person folders (because multiple people were detected), it only appears once.
+    
+    Args:
+        event_id: The event identifier
+        
+    Returns:
+        List of dicts with keys: filename, source, type, url
+    """
+    photos = []
+    seen_filenames = set()  # Track filenames to avoid duplicates
+    event_dir = os.path.join(app.config['PROCESSED_FOLDER'], event_id)
+    
+    logger.info(f"[PHOTO_AGGREGATION] Scanning processed folder for event: {event_id}")
+    
+    if not os.path.exists(event_dir):
+        logger.info(f"[PHOTO_AGGREGATION] Processed folder does not exist for event: {event_id}")
+        return photos
+    
+    try:
+        person_count = 0
+        for person_id in os.listdir(event_dir):
+            group_dir = os.path.join(event_dir, person_id, "group")
+            if os.path.exists(group_dir):
+                person_count += 1
+                for filename in os.listdir(group_dir):
+                    if filename.startswith('watermarked_'):
+                        # Only add if we haven't seen this filename before
+                        if filename not in seen_filenames:
+                            seen_filenames.add(filename)
+                            photos.append({
+                                'filename': filename,
+                                'source': 'processed',
+                                'type': 'group',
+                                'url': f"/photos/{event_id}/all/{filename}"
+                            })
+                            logger.debug(f"[PHOTO_AGGREGATION] Added processed photo: {filename} (person: {person_id})")
+                        else:
+                            logger.debug(f"[PHOTO_AGGREGATION] Skipping duplicate: {filename} (already added from another person folder)")
+        
+        logger.info(f"[PHOTO_AGGREGATION] Found {len(photos)} unique processed photos across {person_count} persons for event: {event_id}")
+    except Exception as e:
+        logger.error(f"[PHOTO_AGGREGATION] Error scanning processed folder for event {event_id}: {e}")
+    
+    return photos
+
+
+def deduplicate_photos(processed_photos, uploads_photos):
+    """
+    Remove duplicate photos based on base filename.
+    Prioritizes processed photos over originals when duplicates exist.
+    
+    The deduplication logic:
+    - Strips 'watermarked_' prefix from processed photos for comparison
+    - If the same base filename exists in both lists, keeps only the processed version
+    - Returns combined list with duplicates removed
+    
+    Args:
+        processed_photos: List of photo dicts from processed folder
+        uploads_photos: List of photo dicts from uploads folder
+        
+    Returns:
+        Deduplicated list of photo dicts
+    """
+    logger.info(f"[PHOTO_AGGREGATION] Deduplicating photos: {len(processed_photos)} processed, {len(uploads_photos)} uploads")
+    
+    # Build a set of base filenames from processed photos
+    processed_base_names = set()
+    for photo in processed_photos:
+        filename = photo['filename']
+        # Remove watermarked_ prefix to get base filename
+        if filename.startswith('watermarked_'):
+            base_name = filename[len('watermarked_'):]
+        else:
+            base_name = filename
+        processed_base_names.add(base_name)
+    
+    logger.debug(f"[PHOTO_AGGREGATION] Processed base filenames: {processed_base_names}")
+    
+    # Filter uploads to exclude any that have processed versions
+    filtered_uploads = []
+    duplicates_removed = 0
+    for photo in uploads_photos:
+        if photo['filename'] not in processed_base_names:
+            filtered_uploads.append(photo)
+        else:
+            duplicates_removed += 1
+            logger.debug(f"[PHOTO_AGGREGATION] Removing duplicate upload: {photo['filename']} (processed version exists)")
+    
+    result = processed_photos + filtered_uploads
+    logger.info(f"[PHOTO_AGGREGATION] Deduplication complete: {len(result)} total photos ({duplicates_removed} duplicates removed)")
+    
+    # Combine processed photos (all) with filtered uploads
+    return result
+
+
 # --- PUBLIC & PRIVATE PHOTO SERVING ---
 @app.route('/api/events/<event_id>/photos', methods=['GET'])
 def get_event_photos(event_id):
-    # (simple version: no pagination, returns all group photos)
-    event_dir = os.path.join(app.config['PROCESSED_FOLDER'], event_id)
-    if not os.path.exists(event_dir):
-        return jsonify({"success": False, "error": "No photos found for this event yet."}), 404
-
-    unique_photos = set()
-    for person_id in os.listdir(event_dir):
-        group_dir = os.path.join(event_dir, person_id, "group")
-        if os.path.exists(group_dir):
-            for filename in os.listdir(group_dir):
-                if filename.startswith('watermarked_'):
-                    unique_photos.add(filename)
-
-    photo_urls = [
-        f"/photos/{event_id}/all/{filename}"
-        for filename in sorted(list(unique_photos))
-    ]
-    # Frontend expects success + photos; you can add has_next if you later add pagination
-    return jsonify({"success": True, "photos": photo_urls, "has_next": False})
+    """
+    Get all photos for an event - ONLY processed group photos (watermarked).
+    
+    This endpoint returns only processed group photos to ensure:
+    - No duplicate photos in the public gallery
+    - Individual photos remain private (not publicly visible)
+    - Only watermarked group photos are shown
+    
+    Individual photos are only accessible through the authenticated biometric portal.
+    """
+    # Store original value for logging
+    original_event_id = event_id
+    
+    # Sanitize event_id to prevent path traversal
+    event_id = sanitize_path_component(event_id)
+    
+    # Log if sanitization changed the value (potential security violation)
+    if event_id != original_event_id:
+        logger.warning(f"[SECURITY] Path sanitization applied - original_event_id: {original_event_id}, sanitized_event_id: {event_id}, operation: get_event_photos")
+    
+    logger.info(f"[PHOTO_AGGREGATION] Getting photos for event: {event_id}, operation: get_event_photos")
+    
+    try:
+        # Only scan processed folder for group photos (watermarked)
+        # Do NOT include uploads folder to avoid duplicates and privacy issues
+        processed_photos = scan_processed_folder(event_id)
+        
+        # Handle empty case
+        if not processed_photos:
+            logger.info(f"[PHOTO_AGGREGATION] No processed photos found for event: {event_id}, operation: get_event_photos")
+            return jsonify({
+                "success": True,
+                "photos": [],
+                "has_next": False,
+                "message": "No photos available for this event yet. Photos will appear here after processing."
+            })
+        
+        # Sort by filename for consistent ordering
+        processed_photos.sort(key=lambda x: x['filename'])
+        
+        # Extract URLs for response (maintaining backward compatibility)
+        photo_urls = [photo['url'] for photo in processed_photos]
+        
+        logger.info(f"[PHOTO_AGGREGATION] Returning {len(photo_urls)} processed group photos for event: {event_id}, operation: get_event_photos")
+        
+        return jsonify({
+            "success": True,
+            "photos": photo_urls,
+            "has_next": False
+        })
+    except Exception as e:
+        logger.error(f"[PHOTO_AGGREGATION] Error getting event photos - event_id: {event_id}, error: {str(e)}, operation: get_event_photos")
+        import traceback
+        logger.error(f"[PHOTO_AGGREGATION] Traceback: {traceback.format_exc()}")
+        return jsonify({
+            "success": False,
+            "error": "Failed to retrieve photos"
+        }), 500
 
 
 @app.route('/photos/<event_id>/all/<filename>')
 def get_public_photo(event_id, filename):
+    # Store original values for logging
+    original_event_id = event_id
+    original_filename = filename
+    
+    logger.info(f"[PHOTO_SERVING] Request for public photo - event_id: {event_id}, filename: {filename}, operation: serve_public")
+    
     # Sanitize path components to prevent path traversal
     event_id = sanitize_path_component(event_id)
     filename = sanitize_filename(filename)
     
+    # Log if sanitization changed the values (potential security violation)
+    if event_id != original_event_id or filename != original_filename:
+        logger.warning(f"[SECURITY] Path sanitization applied - original_event_id: {original_event_id}, sanitized_event_id: {event_id}, original_filename: {original_filename}, sanitized_filename: {filename}, operation: serve_public")
+    
     event_dir = os.path.join(app.config['PROCESSED_FOLDER'], event_id)
     if not os.path.exists(event_dir):
+        logger.error(f"[PHOTO_SERVING] Event directory not found - event_id: {event_id}, filename: {filename}, path: {event_dir}, operation: serve_public")
         return "File Not Found", 404
     
-    for person_id in os.listdir(event_dir):
-        person_id = sanitize_path_component(person_id)
-        photo_path = os.path.join(event_dir, person_id, "group", filename)
-        if os.path.exists(photo_path):
-            return send_from_directory(
-                os.path.join(event_dir, person_id, "group"),
-                filename
-            )
-    return "File Not Found", 404
+    try:
+        for person_id in os.listdir(event_dir):
+            person_id = sanitize_path_component(person_id)
+            photo_path = os.path.join(event_dir, person_id, "group", filename)
+            if os.path.exists(photo_path):
+                logger.info(f"[PHOTO_SERVING] Successfully serving public photo - event_id: {event_id}, filename: {filename}, person_id: {person_id}, operation: serve_public")
+                return send_from_directory(
+                    os.path.join(event_dir, person_id, "group"),
+                    filename
+                )
+        
+        logger.error(f"[PHOTO_SERVING] File not found in any person directory - event_id: {event_id}, filename: {filename}, operation: serve_public")
+        return "File Not Found", 404
+    except Exception as e:
+        logger.error(f"[PHOTO_SERVING] Error serving public photo - event_id: {event_id}, filename: {filename}, error: {str(e)}, operation: serve_public")
+        return "Internal Server Error", 500
 
 
 @app.route('/photos/<event_id>/<person_id>/<photo_type>/<filename>')
 def get_private_photo(event_id, person_id, photo_type, filename):
     # Allow access for admins or logged-in users
     if not session.get('admin_logged_in') and not session.get('logged_in'):
+        logger.warning(f"[PHOTO_SERVING] Unauthorized access attempt - event_id: {event_id}, person_id: {person_id}, photo_type: {photo_type}, filename: {filename}, operation: serve_private")
         return "Unauthorized", 401
 
+    # Store original values for logging
+    original_event_id = event_id
+    original_person_id = person_id
+    original_photo_type = photo_type
+    original_filename = filename
+    
+    logger.info(f"[PHOTO_SERVING] Request for private photo - event_id: {event_id}, person_id: {person_id}, photo_type: {photo_type}, filename: {filename}, operation: serve_private")
+    
     # Sanitize all path components to prevent path traversal
     event_id = sanitize_path_component(event_id)
     person_id = sanitize_path_component(person_id)
     photo_type = sanitize_path_component(photo_type)
     filename = sanitize_filename(filename)
     
+    # Log if sanitization changed the values (potential security violation)
+    if (event_id != original_event_id or person_id != original_person_id or 
+        photo_type != original_photo_type or filename != original_filename):
+        logger.warning(f"[SECURITY] Path sanitization applied - original: {original_event_id}/{original_person_id}/{original_photo_type}/{original_filename}, sanitized: {event_id}/{person_id}/{photo_type}/{filename}, operation: serve_private")
+    
     # Validate photo_type is one of the allowed values
     if photo_type not in ['individual', 'group']:
+        logger.warning(f"[PHOTO_SERVING] Invalid photo type - event_id: {event_id}, person_id: {person_id}, photo_type: {photo_type}, filename: {filename}, operation: serve_private")
         return "Invalid photo type", 400
 
     photo_path = os.path.join(
@@ -1318,10 +1668,17 @@ def get_private_photo(event_id, person_id, photo_type, filename):
         photo_type
     )
     
-    if not os.path.exists(os.path.join(photo_path, filename)):
+    full_photo_path = os.path.join(photo_path, filename)
+    if not os.path.exists(full_photo_path):
+        logger.error(f"[PHOTO_SERVING] File not found - event_id: {event_id}, person_id: {person_id}, photo_type: {photo_type}, filename: {filename}, path: {full_photo_path}, operation: serve_private")
         return "File Not Found", 404
     
-    return send_from_directory(photo_path, filename)
+    try:
+        logger.info(f"[PHOTO_SERVING] Successfully serving private photo - event_id: {event_id}, person_id: {person_id}, photo_type: {photo_type}, filename: {filename}, operation: serve_private")
+        return send_from_directory(photo_path, filename)
+    except Exception as e:
+        logger.error(f"[PHOTO_SERVING] Error serving private photo - event_id: {event_id}, person_id: {person_id}, photo_type: {photo_type}, filename: {filename}, error: {str(e)}, operation: serve_private")
+        return "Internal Server Error", 500
 
 
 @app.route('/api/user_photos', methods=['GET'])
@@ -1847,15 +2204,35 @@ def get_admin_all_photos(event_id):
 def serve_admin_photo(event_id, filename):
     """Serve original uploaded photos to admin"""
     if not session.get('admin_logged_in'):
+        logger.warning(f"[PHOTO_SERVING] Unauthorized admin access attempt - event_id: {event_id}, filename: {filename}, operation: serve_admin")
         return "Unauthorized", 403
 
+    # Store original values for logging
+    original_event_id = event_id
+    original_filename = filename
+    
+    logger.info(f"[PHOTO_SERVING] Admin request for photo - event_id: {event_id}, filename: {filename}, operation: serve_admin")
+    
     # Sanitize path components to prevent path traversal
     event_id = sanitize_path_component(event_id)
     filename = sanitize_filename(filename)
+    
+    # Log if sanitization changed the values (potential security violation)
+    if event_id != original_event_id or filename != original_filename:
+        logger.warning(f"[SECURITY] Path sanitization applied - original_event_id: {original_event_id}, sanitized_event_id: {event_id}, original_filename: {original_filename}, sanitized_filename: {filename}, operation: serve_admin")
 
     upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], event_id)
-    if os.path.exists(os.path.join(upload_dir, filename)):
-        return send_from_directory(upload_dir, filename)
+    full_path = os.path.join(upload_dir, filename)
+    
+    if os.path.exists(full_path):
+        try:
+            logger.info(f"[PHOTO_SERVING] Successfully serving admin photo - event_id: {event_id}, filename: {filename}, operation: serve_admin")
+            return send_from_directory(upload_dir, filename)
+        except Exception as e:
+            logger.error(f"[PHOTO_SERVING] Error serving admin photo - event_id: {event_id}, filename: {filename}, error: {str(e)}, operation: serve_admin")
+            return "Internal Server Error", 500
+    
+    logger.error(f"[PHOTO_SERVING] File not found - event_id: {event_id}, filename: {filename}, path: {full_path}, operation: serve_admin")
     return "File Not Found", 404
 
 
@@ -1911,6 +2288,64 @@ def delete_photo():
             "success": False,
             "error": f"Failed to delete photo: {str(e)}"
         }), 500
+
+
+@app.route('/api/events/<event_id>/uploads/<filename>')
+def serve_upload_photo(event_id, filename):
+    """
+    Serve photos directly from uploads folder.
+    This endpoint provides access to original uploaded photos before processing.
+    
+    Security measures:
+    - Sanitizes event_id to prevent path traversal
+    - Sanitizes filename to prevent directory traversal
+    - Validates file extension is in allowed list
+    - Verifies file exists before serving
+    - Only serves files from within uploads directory
+    """
+    # Store original values for logging
+    original_event_id = event_id
+    original_filename = filename
+    
+    logger.info(f"[PHOTO_SERVING] Request for upload photo - event_id: {event_id}, filename: {filename}, operation: serve_upload")
+    
+    # Sanitize inputs to prevent path traversal attacks
+    event_id = sanitize_path_component(event_id)
+    filename = sanitize_filename(filename)
+    
+    # Log if sanitization changed the values (potential security violation)
+    if event_id != original_event_id or filename != original_filename:
+        logger.warning(f"[SECURITY] Path sanitization applied - original_event_id: {original_event_id}, sanitized_event_id: {event_id}, original_filename: {original_filename}, sanitized_filename: {filename}, operation: serve_upload")
+    
+    # Validate file extension is in allowed list
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in ['.jpg', '.jpeg', '.png']:
+        logger.warning(f"[PHOTO_SERVING] Invalid file type rejected - event_id: {event_id}, filename: {filename}, extension: {ext}, operation: serve_upload")
+        return "Invalid file type", 400
+    
+    # Build path to uploads folder for this event
+    upload_dir = os.path.join(app.config['UPLOAD_FOLDER'], event_id)
+    photo_path = os.path.join(upload_dir, filename)
+    
+    # Verify file exists before attempting to serve
+    if not os.path.exists(photo_path):
+        logger.error(f"[PHOTO_SERVING] File not found - event_id: {event_id}, filename: {filename}, path: {photo_path}, operation: serve_upload")
+        return "File Not Found", 404
+    
+    # Verify the resolved path is still within the uploads directory (additional security check)
+    real_upload_dir = os.path.realpath(upload_dir)
+    real_photo_path = os.path.realpath(photo_path)
+    if not real_photo_path.startswith(real_upload_dir):
+        logger.error(f"[SECURITY] Path traversal attempt detected - event_id: {event_id}, filename: {filename}, attempted_path: {photo_path}, operation: serve_upload")
+        return "File Not Found", 404
+    
+    # Serve file securely using Flask's send_from_directory
+    try:
+        logger.info(f"[PHOTO_SERVING] Successfully serving upload photo - event_id: {event_id}, filename: {filename}, operation: serve_upload")
+        return send_from_directory(upload_dir, filename)
+    except Exception as e:
+        logger.error(f"[PHOTO_SERVING] Error serving file - event_id: {event_id}, filename: {filename}, error: {str(e)}, operation: serve_upload")
+        return "Internal Server Error", 500
 
 
 # --- STARTUP TASKS ---

@@ -192,7 +192,8 @@
 
                     } else {
                         if(page === 1) {
-                           loadingMessage.textContent = data.error || 'No photos have been processed for this event yet.';
+                           // Use the message from the API response if available, otherwise use default
+                           loadingMessage.textContent = data.message || data.error || 'No photos available for this event yet.';
                         }
                     }
                 } catch (error) {

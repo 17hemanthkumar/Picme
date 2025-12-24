@@ -10,3 +10,7 @@ pillow
 psycopg2-binary==2.9.9
 python-dotenv==0.19.0
 qrcode==7.4.2
+
+# Testing dependencies
+pytest==7.4.3
+hypothesis==6.92.1
